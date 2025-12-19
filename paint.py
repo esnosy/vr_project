@@ -2,6 +2,7 @@ import pygame
 import sys
 import datetime
 import collections
+import math
 
 # Initialize Pygame
 pygame.init()
@@ -14,8 +15,9 @@ FPS = 120
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-GRAY = (200, 200, 200)
+GRAY = (220, 220, 220)
 DARK_GRAY = (150, 150, 150)
+LIGHT_BLUE = (200, 220, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
@@ -35,12 +37,17 @@ TOOL_TEXT = 'text'
 
 # Setup Screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Simple Paint - Fixed Text & Colors")
+pygame.display.set_caption("Simple Paint - Fixed Layout")
 clock = pygame.time.Clock()
 
 # Fonts
-font = pygame.font.SysFont('Arial', 16)
-btn_font = pygame.font.SysFont('Arial', 14, bold=True)
+font_sm = pygame.font.SysFont('Arial', 14)
+font_bold = pygame.font.SysFont('Arial', 14, bold=True)
+btn_font = pygame.font.SysFont('Arial', 13, bold=True)
+
+# Color Wheel Constants
+WHEEL_CENTER = (WIDTH - 150, 55)
+WHEEL_RADIUS = 40
 
 def get_canvas_font(size):
     return pygame.font.SysFont('Arial', max(14, size * 4))
@@ -65,7 +72,7 @@ redo_stack = []
 
 # Define Button Areas
 BUTTON_Y = 65
-BUTTON_HEIGHT = 40
+BUTTON_HEIGHT = 35
 BUTTON_W = 75
 
 TEXT_TOOL_BTN_RECT = pygame.Rect(10, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
@@ -75,12 +82,41 @@ FILL_TOOL_BTN_RECT = pygame.Rect(250, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
 BRUSH_TOOL_BTN_RECT = pygame.Rect(330, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
 RECT_TOOL_BTN_RECT = pygame.Rect(410, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
 
-UNDO_BTN_RECT = pygame.Rect(WIDTH - 250, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
-REDO_BTN_RECT = pygame.Rect(WIDTH - 165, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
-SAVE_BTN_RECT = pygame.Rect(WIDTH - 80, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
+# Action Buttons on Right
+UNDO_BTN_RECT = pygame.Rect(WIDTH - 380, BUTTON_Y, 65, BUTTON_HEIGHT)
+REDO_BTN_RECT = pygame.Rect(WIDTH - 310, BUTTON_Y, 65, BUTTON_HEIGHT)
+SAVE_BTN_RECT = pygame.Rect(WIDTH - 240, BUTTON_Y, 65, BUTTON_HEIGHT)
 
 # Initialize Canvas
 screen.fill(WHITE)
+
+def draw_color_wheel(surface, center, radius):
+    """Draws a radial color wheel."""
+    for y in range(-radius, radius):
+        for x in range(-radius, radius):
+            dist = math.sqrt(x*x + y*y)
+            if dist <= radius:
+                angle = math.degrees(math.atan2(y, x)) % 360
+                h = angle
+                s = (dist / radius) * 100
+                v = 100
+                color = pygame.Color(0)
+                color.hsva = (h, s, v, 100)
+                surface.set_at((center[0] + x, center[1] + y), color)
+    pygame.draw.circle(surface, BLACK, center, radius, 1)
+
+def get_color_from_wheel(pos):
+    """Returns color at pos if within wheel, else None."""
+    dx = pos[0] - WHEEL_CENTER[0]
+    dy = pos[1] - WHEEL_CENTER[1]
+    dist = math.sqrt(dx*dx + dy*dy)
+    if dist <= WHEEL_RADIUS:
+        angle = math.degrees(math.atan2(dy, dx)) % 360
+        s = (dist / WHEEL_RADIUS) * 100
+        color = pygame.Color(0)
+        color.hsva = (angle, s, 100, 100)
+        return (color.r, color.g, color.b)
+    return None
 
 def draw_line(surface, start, end, width, color):
     pygame.draw.line(surface, color, start, end, width * 2)
@@ -154,42 +190,72 @@ def perform_redo():
         screen.blit(redo_stack.pop(), (0, 0))
 
 def draw_button(surface, rect, text, active=True, toggled=False):
-    color = (100, 100, 200) if toggled else (DARK_GRAY if active else GRAY)
-    pygame.draw.rect(surface, color, rect)
-    pygame.draw.rect(surface, BLACK, rect, 1)
+    color = (120, 140, 220) if toggled else (DARK_GRAY if active else (180, 180, 180))
+    pygame.draw.rect(surface, color, rect, border_radius=3)
+    pygame.draw.rect(surface, BLACK, rect, 1, border_radius=3)
     txt_surf = btn_font.render(text, True, WHITE if active or toggled else (100, 100, 100))
     surface.blit(txt_surf, txt_surf.get_rect(center=rect.center))
 
 def draw_ui(surface):
+    # Main Toolbar background
     pygame.draw.rect(surface, GRAY, (0, 0, WIDTH, TOOLBAR_HEIGHT))
-    pygame.draw.line(surface, BLACK, (0, TOOLBAR_HEIGHT), (WIDTH, TOOLBAR_HEIGHT), 2)
+    
+    # --- Help & Status Bar ---
+    pygame.draw.rect(surface, LIGHT_BLUE, (0, 0, WIDTH, 25))
+    pygame.draw.line(surface, BLACK, (0, 25), (WIDTH, 25), 1)
+    
+    help_text = "C: Clear | ^Z: Undo | ^Y: Redo | +/-: Brush Size | ENTER: Commit Text"
+    surface.blit(font_sm.render(help_text, True, (40, 40, 40)), (10, 5))
+    
+    # Size indicator
+    size_text = f"Brush Size: {brush_size}"
+    size_surf = font_bold.render(size_text, True, BLACK)
+    surface.blit(size_surf, (WIDTH - size_surf.get_width() - 10, 5))
+
     # Palette
     for i, color in enumerate(COLORS):
-        rect = (10 + 50 * i, 10, 40, 40)
+        # FIX: Wrapped in pygame.Rect to enable .inflate() method
+        rect = pygame.Rect(10 + 45 * i, 30, 35, 30)
         pygame.draw.rect(surface, color, rect)
         pygame.draw.rect(surface, BLACK, rect, 1)
         active_color = WHITE if eraser_mode else brush_color
-        if color == active_color:
-             pygame.draw.rect(surface, WHITE, rect, 3)
-    # Info
-    surface.blit(font.render(f"Size: {brush_size}", True, BLACK), (420, 20))
-    surface.blit(font.render("C: Clear | ^Z: Undo | ENTER: Commit Text", True, (60, 60, 60)), (500, 20))
-    # Tools
+        if not eraser_mode and color == active_color:
+             pygame.draw.rect(surface, BLACK, rect, 2)
+             pygame.draw.rect(surface, WHITE, rect.inflate(-4, -4), 1)
+    
+    # Color Wheel
+    draw_color_wheel(surface, WHEEL_CENTER, WHEEL_RADIUS)
+    
+    # Selected Color Preview
+    preview_rect = pygame.Rect(WHEEL_CENTER[0] + WHEEL_RADIUS + 20, 35, 45, 45)
+    if not eraser_mode:
+        pygame.draw.rect(surface, brush_color, preview_rect)
+        pygame.draw.rect(surface, BLACK, preview_rect, 2)
+    else:
+        # Eraser indicator
+        pygame.draw.rect(surface, WHITE, preview_rect)
+        pygame.draw.rect(surface, BLACK, preview_rect, 1)
+        pygame.draw.line(surface, RED, preview_rect.topleft, preview_rect.bottomright, 2)
+
+    # Tool Buttons
     draw_button(surface, TEXT_TOOL_BTN_RECT, "TEXT", toggled=(current_tool == TOOL_TEXT))
     draw_button(surface, TRI_TOOL_BTN_RECT, "TRIANGLE", toggled=(current_tool == TOOL_TRIANGLE))
     draw_button(surface, CIRCLE_TOOL_BTN_RECT, "CIRCLE", toggled=(current_tool == TOOL_CIRCLE))
     draw_button(surface, FILL_TOOL_BTN_RECT, "FILL", toggled=(current_tool == TOOL_FILL))
     draw_button(surface, BRUSH_TOOL_BTN_RECT, "BRUSH", toggled=(current_tool == TOOL_BRUSH and not eraser_mode))
     draw_button(surface, RECT_TOOL_BTN_RECT, "RECT", toggled=(current_tool == TOOL_RECT))
-    # Actions
+    
+    # Action Buttons
     draw_button(surface, UNDO_BTN_RECT, "UNDO", active=len(undo_stack) > 0)
     draw_button(surface, REDO_BTN_RECT, "REDO", active=len(redo_stack) > 0)
     draw_button(surface, SAVE_BTN_RECT, "SAVE")
+    
+    pygame.draw.line(surface, BLACK, (0, TOOLBAR_HEIGHT), (WIDTH, TOOLBAR_HEIGHT), 2)
 
 def commit_text():
     global typing, text_input
     if typing:
-        if undo_stack: screen.blit(undo_stack[-1], (0, 0)) # Clear preview first
+        if undo_stack: screen.blit(undo_stack[-1], (0, 0))
         if text_input.strip() != "":
             save_snapshot()
             canvas_font = get_canvas_font(brush_size)
@@ -209,6 +275,13 @@ def cancel_text():
 def handle_ui_click(pos):
     global brush_color, eraser_mode, current_tool, typing
     x, y = pos
+
+    wheel_color = get_color_from_wheel(pos)
+    if wheel_color:
+        brush_color = wheel_color
+        eraser_mode = False
+        return
+
     if y >= 65:
         if typing: commit_text()
         if SAVE_BTN_RECT.collidepoint(pos): save_image()
@@ -221,15 +294,14 @@ def handle_ui_click(pos):
         elif RECT_TOOL_BTN_RECT.collidepoint(pos): current_tool = TOOL_RECT
         elif BRUSH_TOOL_BTN_RECT.collidepoint(pos): current_tool = TOOL_BRUSH
         eraser_mode = False
-    elif y <= 50:
+    elif 30 <= y <= 60:
         for i, color in enumerate(COLORS):
-            if 10 + 50 * i <= x <= 50 + 50 * i:
+            if 10 + 45 * i <= x <= 45 + 45 * i:
                 if color == WHITE: 
                     eraser_mode = True
                 else:
                     eraser_mode = False
                     brush_color = color
-                # REMOVED: current_tool = TOOL_BRUSH so tool remains same
                 return
 
 # --- Main Loop ---
@@ -241,15 +313,10 @@ while running:
         
         elif event.type == pygame.KEYDOWN:
             if typing:
-                if event.key == pygame.K_RETURN:
-                    commit_text()
-                elif event.key == pygame.K_BACKSPACE:
-                    text_input = text_input[:-1]
-                elif event.key == pygame.K_ESCAPE:
-                    cancel_text()
-                else:
-                    if event.unicode.isprintable():
-                        text_input += event.unicode
+                if event.key == pygame.K_RETURN: commit_text()
+                elif event.key == pygame.K_BACKSPACE: text_input = text_input[:-1]
+                elif event.key == pygame.K_ESCAPE: cancel_text()
+                elif event.unicode.isprintable(): text_input += event.unicode
             else:
                 mods = pygame.key.get_mods()
                 if event.key == pygame.K_c:
@@ -266,7 +333,7 @@ while running:
                 else:
                     if current_tool == TOOL_TEXT:
                         if typing: commit_text()
-                        save_snapshot() # Snapshot BEFORE starting typing session
+                        save_snapshot()
                         typing = True
                         text_input = ""
                         text_pos = event.pos
@@ -296,21 +363,14 @@ while running:
                     elif current_tool == TOOL_CIRCLE: draw_circle_preview(screen, start_pos, event.pos, brush_size, color)
                     elif current_tool == TOOL_TRIANGLE: draw_triangle_preview(screen, start_pos, event.pos, brush_size, color)
 
-    # 1. Clear text preview visually if not typing
-    # 2. Render UI
     draw_ui(screen)
     
-    # 3. Render Text Tool Overlays only while typing
     if typing:
-        # Re-blit clean state to hide previous frame's text overlay
         if undo_stack: screen.blit(undo_stack[-1], (0, 0))
-        # Redraw UI over that clean state
         draw_ui(screen)
-        
         canvas_font = get_canvas_font(brush_size)
         color = brush_color if not eraser_mode else (50, 50, 50)
         cursor = "_" if (pygame.time.get_ticks() // 400) % 2 == 0 else " "
-        
         preview_surf = canvas_font.render(text_input + cursor, True, color)
         bg_rect = preview_surf.get_rect(topleft=text_pos)
         pygame.draw.rect(screen, (240, 240, 240), bg_rect.inflate(4, 4))
