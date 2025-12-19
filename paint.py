@@ -37,24 +37,26 @@ TOOL_TEXT = 'text'
 
 # Setup Screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Simple Paint - Swapped Rows")
+pygame.display.set_caption("Simple Paint - HSV Sliders")
 clock = pygame.time.Clock()
 
 # Fonts
-font_sm = pygame.font.SysFont('Arial', 14)
+font_sm = pygame.font.SysFont('Arial', 12)
 font_bold = pygame.font.SysFont('Arial', 14, bold=True)
 btn_font = pygame.font.SysFont('Arial', 13, bold=True)
 
 # Layout Constants
-# Row 2 (Now Tools)
 ROW2_Y = 25
-# Row 3 (Now Palette)
 ROW3_Y = 65
-# Row 4 (Picker)
 ROW4_Y = 115
 
-WHEEL_CENTER = (60, ROW4_Y + 22) 
-WHEEL_RADIUS = 18 
+# HSV Slider Constants
+SLIDER_X = 50
+SLIDER_WIDTH = 200
+SLIDER_HEIGHT = 10
+H_SLIDER_Y = ROW4_Y + 5
+S_SLIDER_Y = ROW4_Y + 20
+V_SLIDER_Y = ROW4_Y + 35
 
 def get_canvas_font(size):
     return pygame.font.SysFont('Arial', max(14, size * 4))
@@ -68,6 +70,9 @@ brush_size = 5
 eraser_mode = False
 current_tool = TOOL_BRUSH
 
+# HSV State (0-360 for H, 0-100 for S/V)
+current_hsv = [0.0, 100.0, 0.0] # Initial Black (V=0)
+
 # Text Tool State
 typing = False
 text_input = ""
@@ -77,7 +82,7 @@ text_pos = (0, 0)
 undo_stack = []
 redo_stack = []
 
-# Define Button Areas (Now in Row 2)
+# Define Button Areas (Row 2)
 BUTTON_Y = ROW2_Y + 5
 BUTTON_HEIGHT = 30
 BUTTON_W = 75
@@ -97,33 +102,47 @@ SAVE_BTN_RECT = pygame.Rect(WIDTH - 80, BUTTON_Y, 65, BUTTON_HEIGHT)
 # Initialize Canvas
 screen.fill(WHITE)
 
-def draw_color_wheel(surface, center, radius):
-    """Draws a radial color wheel."""
-    for y in range(-radius, radius):
-        for x in range(-radius, radius):
-            dist = math.sqrt(x*x + y*y)
-            if dist <= radius:
-                angle = math.degrees(math.atan2(y, x)) % 360
-                h = angle
-                s = (dist / radius) * 100
-                v = 100
-                color = pygame.Color(0)
-                color.hsva = (h, s, v, 100)
-                surface.set_at((center[0] + x, center[1] + y), color)
-    pygame.draw.circle(surface, BLACK, center, radius, 1)
+def update_color_from_hsv():
+    global brush_color
+    color = pygame.Color(0)
+    color.hsva = (current_hsv[0], current_hsv[1], current_hsv[2], 100)
+    brush_color = (color.r, color.g, color.b)
 
-def get_color_from_wheel(pos):
-    """Returns color at pos if within wheel, else None."""
-    dx = pos[0] - WHEEL_CENTER[0]
-    dy = pos[1] - WHEEL_CENTER[1]
-    dist = math.sqrt(dx*dx + dy*dy)
-    if dist <= WHEEL_RADIUS:
-        angle = math.degrees(math.atan2(dy, dx)) % 360
-        s = (dist / WHEEL_RADIUS) * 100
-        color = pygame.Color(0)
-        color.hsva = (angle, s, 100, 100)
-        return (color.r, color.g, color.b)
-    return None
+def draw_slider(surface, x, y, w, h, val, max_val, label, color_mode="hue"):
+    # Label
+    lbl_surf = font_sm.render(label, True, BLACK)
+    surface.blit(lbl_surf, (x - 35, y - 2))
+    
+    # Track
+    track_rect = pygame.Rect(x, y, w, h)
+    pygame.draw.rect(surface, WHITE, track_rect)
+    pygame.draw.rect(surface, BLACK, track_rect, 1)
+    
+    # Visual gradient background for hue/sat/val
+    if color_mode == "hue":
+        for i in range(w):
+            hue = (i / w) * 360
+            c = pygame.Color(0)
+            c.hsva = (hue, 100, 100, 100)
+            pygame.draw.line(surface, c, (x + i, y + 1), (x + i, y + h - 2))
+    elif color_mode == "sat":
+        for i in range(w):
+            sat = (i / w) * 100
+            c = pygame.Color(0)
+            c.hsva = (current_hsv[0], sat, 100, 100)
+            pygame.draw.line(surface, c, (x + i, y + 1), (x + i, y + h - 2))
+    elif color_mode == "val":
+        for i in range(w):
+            val_bg = (i / w) * 100
+            c = pygame.Color(0)
+            c.hsva = (current_hsv[0], current_hsv[1], val_bg, 100)
+            pygame.draw.line(surface, c, (x + i, y + 1), (x + i, y + h - 2))
+
+    # Knob
+    knob_pos = x + (val / max_val) * w
+    knob_rect = pygame.Rect(knob_pos - 4, y - 2, 8, h + 4)
+    pygame.draw.rect(surface, DARK_GRAY, knob_rect)
+    pygame.draw.rect(surface, BLACK, knob_rect, 1)
 
 def draw_line(surface, start, end, width, color):
     pygame.draw.line(surface, color, start, end, width * 2)
@@ -218,7 +237,7 @@ def draw_ui(surface):
     size_surf = font_bold.render(size_text, True, BLACK)
     surface.blit(size_surf, (WIDTH - size_surf.get_width() - 10, 5))
 
-    # --- Row 2: Tools & Actions (Previously Row 3) ---
+    # --- Row 2: Tools & Actions ---
     draw_button(surface, TEXT_TOOL_BTN_RECT, "TEXT", toggled=(current_tool == TOOL_TEXT))
     draw_button(surface, TRI_TOOL_BTN_RECT, "TRIANGLE", toggled=(current_tool == TOOL_TRIANGLE))
     draw_button(surface, CIRCLE_TOOL_BTN_RECT, "CIRCLE", toggled=(current_tool == TOOL_CIRCLE))
@@ -230,7 +249,7 @@ def draw_ui(surface):
     draw_button(surface, REDO_BTN_RECT, "REDO", active=len(redo_stack) > 0)
     draw_button(surface, SAVE_BTN_RECT, "SAVE")
 
-    # --- Row 3: Palette (Previously Row 2) ---
+    # --- Row 3: Palette ---
     pygame.draw.line(surface, DARK_GRAY, (0, ROW3_Y - 5), (WIDTH, ROW3_Y - 5), 1)
     for i, color in enumerate(COLORS):
         rect = pygame.Rect(10 + 40 * i, ROW3_Y + 5, 35, 25)
@@ -241,13 +260,15 @@ def draw_ui(surface):
              pygame.draw.rect(surface, BLACK, rect, 2)
              pygame.draw.rect(surface, WHITE, rect.inflate(-4, -4), 1)
 
-    # --- Row 4: Color Wheel & Preview ---
+    # --- Row 4: HSV Sliders & Preview ---
     pygame.draw.line(surface, DARK_GRAY, (0, ROW4_Y - 5), (WIDTH, ROW4_Y - 5), 1)
     
-    draw_color_wheel(surface, WHEEL_CENTER, WHEEL_RADIUS)
+    draw_slider(surface, SLIDER_X, H_SLIDER_Y, SLIDER_WIDTH, SLIDER_HEIGHT, current_hsv[0], 360, "Hue", "hue")
+    draw_slider(surface, SLIDER_X, S_SLIDER_Y, SLIDER_WIDTH, SLIDER_HEIGHT, current_hsv[1], 100, "Sat", "sat")
+    draw_slider(surface, SLIDER_X, V_SLIDER_Y, SLIDER_WIDTH, SLIDER_HEIGHT, current_hsv[2], 100, "Val", "val")
     
     # Selected Color Preview
-    preview_rect = pygame.Rect(100, ROW4_Y + 3, 35, 35) 
+    preview_rect = pygame.Rect(280, ROW4_Y + 3, 40, 40) 
     if not eraser_mode:
         pygame.draw.rect(surface, brush_color, preview_rect)
         pygame.draw.rect(surface, BLACK, preview_rect, 2)
@@ -282,14 +303,25 @@ def handle_ui_click(pos):
     global brush_color, eraser_mode, current_tool, typing
     x, y = pos
 
-    # Check Color Wheel Area (Row 4)
-    wheel_color = get_color_from_wheel(pos)
-    if wheel_color:
-        brush_color = wheel_color
-        eraser_mode = False
-        return
+    # Check HSV Sliders
+    if SLIDER_X <= x <= SLIDER_X + SLIDER_WIDTH:
+        if H_SLIDER_Y <= y <= H_SLIDER_Y + SLIDER_HEIGHT:
+            current_hsv[0] = ((x - SLIDER_X) / SLIDER_WIDTH) * 360
+            update_color_from_hsv()
+            eraser_mode = False
+            return
+        elif S_SLIDER_Y <= y <= S_SLIDER_Y + SLIDER_HEIGHT:
+            current_hsv[1] = ((x - SLIDER_X) / SLIDER_WIDTH) * 100
+            update_color_from_hsv()
+            eraser_mode = False
+            return
+        elif V_SLIDER_Y <= y <= V_SLIDER_Y + SLIDER_HEIGHT:
+            current_hsv[2] = ((x - SLIDER_X) / SLIDER_WIDTH) * 100
+            update_color_from_hsv()
+            eraser_mode = False
+            return
 
-    # Check Toolbar Buttons (Now Row 2)
+    # Check Toolbar Buttons (Row 2)
     if ROW2_Y <= y <= ROW2_Y + 45:
         if typing: commit_text()
         if SAVE_BTN_RECT.collidepoint(pos): save_image()
@@ -303,7 +335,7 @@ def handle_ui_click(pos):
         elif BRUSH_TOOL_BTN_RECT.collidepoint(pos): current_tool = TOOL_BRUSH
         eraser_mode = False
     
-    # Check Palette (Now Row 3)
+    # Check Palette (Row 3)
     elif ROW3_Y <= y <= ROW3_Y + 45:
         for i, color in enumerate(COLORS):
             rect_x = 10 + 40 * i
@@ -313,6 +345,10 @@ def handle_ui_click(pos):
                 else:
                     eraser_mode = False
                     brush_color = color
+                    # Sync HSV state when picking from palette
+                    c = pygame.Color(color)
+                    h, s, v, a = c.hsva
+                    current_hsv[0], current_hsv[1], current_hsv[2] = h, s, v
                 return
 
 # --- Main Loop ---
@@ -363,6 +399,10 @@ while running:
                 start_pos = None
 
         elif event.type == pygame.MOUSEMOTION:
+            # Handle slider dragging even if motion starts slightly outside while held
+            if pygame.mouse.get_pressed()[0] and event.pos[1] <= TOOLBAR_HEIGHT:
+                handle_ui_click(event.pos)
+
             if drawing and event.pos[1] > TOOLBAR_HEIGHT:
                 color = WHITE if eraser_mode else brush_color
                 if current_tool == TOOL_BRUSH:
@@ -374,6 +414,7 @@ while running:
                     elif current_tool == TOOL_CIRCLE: draw_circle_preview(screen, start_pos, event.pos, brush_size, color)
                     elif current_tool == TOOL_TRIANGLE: draw_triangle_preview(screen, start_pos, event.pos, brush_size, color)
 
+    # UI updates every frame
     draw_ui(screen)
     
     if typing:
