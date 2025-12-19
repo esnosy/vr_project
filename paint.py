@@ -8,8 +8,8 @@ import math
 pygame.init()
 
 # --- Constants & Configuration ---
-WIDTH, HEIGHT = 900, 600
-TOOLBAR_HEIGHT = 110
+WIDTH, HEIGHT = 900, 650  
+TOOLBAR_HEIGHT = 160      
 FPS = 120
 
 # Colors
@@ -37,7 +37,7 @@ TOOL_TEXT = 'text'
 
 # Setup Screen
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Simple Paint - Fixed Layout")
+pygame.display.set_caption("Simple Paint - Swapped Rows")
 clock = pygame.time.Clock()
 
 # Fonts
@@ -45,9 +45,16 @@ font_sm = pygame.font.SysFont('Arial', 14)
 font_bold = pygame.font.SysFont('Arial', 14, bold=True)
 btn_font = pygame.font.SysFont('Arial', 13, bold=True)
 
-# Color Wheel Constants
-WHEEL_CENTER = (WIDTH - 150, 55)
-WHEEL_RADIUS = 40
+# Layout Constants
+# Row 2 (Now Tools)
+ROW2_Y = 25
+# Row 3 (Now Palette)
+ROW3_Y = 65
+# Row 4 (Picker)
+ROW4_Y = 115
+
+WHEEL_CENTER = (60, ROW4_Y + 22) 
+WHEEL_RADIUS = 18 
 
 def get_canvas_font(size):
     return pygame.font.SysFont('Arial', max(14, size * 4))
@@ -70,9 +77,9 @@ text_pos = (0, 0)
 undo_stack = []
 redo_stack = []
 
-# Define Button Areas
-BUTTON_Y = 65
-BUTTON_HEIGHT = 35
+# Define Button Areas (Now in Row 2)
+BUTTON_Y = ROW2_Y + 5
+BUTTON_HEIGHT = 30
 BUTTON_W = 75
 
 TEXT_TOOL_BTN_RECT = pygame.Rect(10, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
@@ -83,9 +90,9 @@ BRUSH_TOOL_BTN_RECT = pygame.Rect(330, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
 RECT_TOOL_BTN_RECT = pygame.Rect(410, BUTTON_Y, BUTTON_W, BUTTON_HEIGHT)
 
 # Action Buttons on Right
-UNDO_BTN_RECT = pygame.Rect(WIDTH - 380, BUTTON_Y, 65, BUTTON_HEIGHT)
-REDO_BTN_RECT = pygame.Rect(WIDTH - 310, BUTTON_Y, 65, BUTTON_HEIGHT)
-SAVE_BTN_RECT = pygame.Rect(WIDTH - 240, BUTTON_Y, 65, BUTTON_HEIGHT)
+UNDO_BTN_RECT = pygame.Rect(WIDTH - 220, BUTTON_Y, 65, BUTTON_HEIGHT)
+REDO_BTN_RECT = pygame.Rect(WIDTH - 150, BUTTON_Y, 65, BUTTON_HEIGHT)
+SAVE_BTN_RECT = pygame.Rect(WIDTH - 80, BUTTON_Y, 65, BUTTON_HEIGHT)
 
 # Initialize Canvas
 screen.fill(WHITE)
@@ -200,44 +207,18 @@ def draw_ui(surface):
     # Main Toolbar background
     pygame.draw.rect(surface, GRAY, (0, 0, WIDTH, TOOLBAR_HEIGHT))
     
-    # --- Help & Status Bar ---
+    # --- Row 1: Help & Status Bar ---
     pygame.draw.rect(surface, LIGHT_BLUE, (0, 0, WIDTH, 25))
     pygame.draw.line(surface, BLACK, (0, 25), (WIDTH, 25), 1)
     
-    help_text = "C: Clear | ^Z: Undo | ^Y: Redo | +/-: Brush Size | ENTER: Commit Text"
+    help_text = "C: Clear | ^Z: Undo | ^Y: Redo | +/-: Size | ENTER: Commit Text"
     surface.blit(font_sm.render(help_text, True, (40, 40, 40)), (10, 5))
     
-    # Size indicator
     size_text = f"Brush Size: {brush_size}"
     size_surf = font_bold.render(size_text, True, BLACK)
     surface.blit(size_surf, (WIDTH - size_surf.get_width() - 10, 5))
 
-    # Palette
-    for i, color in enumerate(COLORS):
-        # FIX: Wrapped in pygame.Rect to enable .inflate() method
-        rect = pygame.Rect(10 + 45 * i, 30, 35, 30)
-        pygame.draw.rect(surface, color, rect)
-        pygame.draw.rect(surface, BLACK, rect, 1)
-        active_color = WHITE if eraser_mode else brush_color
-        if not eraser_mode and color == active_color:
-             pygame.draw.rect(surface, BLACK, rect, 2)
-             pygame.draw.rect(surface, WHITE, rect.inflate(-4, -4), 1)
-    
-    # Color Wheel
-    draw_color_wheel(surface, WHEEL_CENTER, WHEEL_RADIUS)
-    
-    # Selected Color Preview
-    preview_rect = pygame.Rect(WHEEL_CENTER[0] + WHEEL_RADIUS + 20, 35, 45, 45)
-    if not eraser_mode:
-        pygame.draw.rect(surface, brush_color, preview_rect)
-        pygame.draw.rect(surface, BLACK, preview_rect, 2)
-    else:
-        # Eraser indicator
-        pygame.draw.rect(surface, WHITE, preview_rect)
-        pygame.draw.rect(surface, BLACK, preview_rect, 1)
-        pygame.draw.line(surface, RED, preview_rect.topleft, preview_rect.bottomright, 2)
-
-    # Tool Buttons
+    # --- Row 2: Tools & Actions (Previously Row 3) ---
     draw_button(surface, TEXT_TOOL_BTN_RECT, "TEXT", toggled=(current_tool == TOOL_TEXT))
     draw_button(surface, TRI_TOOL_BTN_RECT, "TRIANGLE", toggled=(current_tool == TOOL_TRIANGLE))
     draw_button(surface, CIRCLE_TOOL_BTN_RECT, "CIRCLE", toggled=(current_tool == TOOL_CIRCLE))
@@ -245,10 +226,35 @@ def draw_ui(surface):
     draw_button(surface, BRUSH_TOOL_BTN_RECT, "BRUSH", toggled=(current_tool == TOOL_BRUSH and not eraser_mode))
     draw_button(surface, RECT_TOOL_BTN_RECT, "RECT", toggled=(current_tool == TOOL_RECT))
     
-    # Action Buttons
     draw_button(surface, UNDO_BTN_RECT, "UNDO", active=len(undo_stack) > 0)
     draw_button(surface, REDO_BTN_RECT, "REDO", active=len(redo_stack) > 0)
     draw_button(surface, SAVE_BTN_RECT, "SAVE")
+
+    # --- Row 3: Palette (Previously Row 2) ---
+    pygame.draw.line(surface, DARK_GRAY, (0, ROW3_Y - 5), (WIDTH, ROW3_Y - 5), 1)
+    for i, color in enumerate(COLORS):
+        rect = pygame.Rect(10 + 40 * i, ROW3_Y + 5, 35, 25)
+        pygame.draw.rect(surface, color, rect)
+        pygame.draw.rect(surface, BLACK, rect, 1)
+        active_color = WHITE if eraser_mode else brush_color
+        if not eraser_mode and color == active_color:
+             pygame.draw.rect(surface, BLACK, rect, 2)
+             pygame.draw.rect(surface, WHITE, rect.inflate(-4, -4), 1)
+
+    # --- Row 4: Color Wheel & Preview ---
+    pygame.draw.line(surface, DARK_GRAY, (0, ROW4_Y - 5), (WIDTH, ROW4_Y - 5), 1)
+    
+    draw_color_wheel(surface, WHEEL_CENTER, WHEEL_RADIUS)
+    
+    # Selected Color Preview
+    preview_rect = pygame.Rect(100, ROW4_Y + 3, 35, 35) 
+    if not eraser_mode:
+        pygame.draw.rect(surface, brush_color, preview_rect)
+        pygame.draw.rect(surface, BLACK, preview_rect, 2)
+    else:
+        pygame.draw.rect(surface, WHITE, preview_rect)
+        pygame.draw.rect(surface, BLACK, preview_rect, 1)
+        pygame.draw.line(surface, RED, preview_rect.topleft, preview_rect.bottomright, 2)
     
     pygame.draw.line(surface, BLACK, (0, TOOLBAR_HEIGHT), (WIDTH, TOOLBAR_HEIGHT), 2)
 
@@ -276,13 +282,15 @@ def handle_ui_click(pos):
     global brush_color, eraser_mode, current_tool, typing
     x, y = pos
 
+    # Check Color Wheel Area (Row 4)
     wheel_color = get_color_from_wheel(pos)
     if wheel_color:
         brush_color = wheel_color
         eraser_mode = False
         return
 
-    if y >= 65:
+    # Check Toolbar Buttons (Now Row 2)
+    if ROW2_Y <= y <= ROW2_Y + 45:
         if typing: commit_text()
         if SAVE_BTN_RECT.collidepoint(pos): save_image()
         elif UNDO_BTN_RECT.collidepoint(pos): perform_undo()
@@ -294,9 +302,12 @@ def handle_ui_click(pos):
         elif RECT_TOOL_BTN_RECT.collidepoint(pos): current_tool = TOOL_RECT
         elif BRUSH_TOOL_BTN_RECT.collidepoint(pos): current_tool = TOOL_BRUSH
         eraser_mode = False
-    elif 30 <= y <= 60:
+    
+    # Check Palette (Now Row 3)
+    elif ROW3_Y <= y <= ROW3_Y + 45:
         for i, color in enumerate(COLORS):
-            if 10 + 45 * i <= x <= 45 + 45 * i:
+            rect_x = 10 + 40 * i
+            if rect_x <= x <= rect_x + 35:
                 if color == WHITE: 
                     eraser_mode = True
                 else:
